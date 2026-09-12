@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Outer Shield Shape centered in 66dp safe zone (canvas 108x108) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,26 C64,26 76,28 80,31 C80,48 76,67 54,82 C32,67 28,48 28,31 C32,28 44,26 54,26 Z" />
+    <!-- Inner Accent Layer (Rose Pink) -->
+    <path
+        android:fillColor="#E91E63"
+        android:pathData="M54,30 C62,30 72,32 75,34.5 C75,48.5 71.5,63.5 54,76.5 C36.5,63.5 33,48.5 33,34.5 C36,32 46,30 54,30 Z" />
+    <!-- Guardian Heart & Star in Center -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,42 C51,38 45,38 42,41 C39,44 39,49 42,53 L54,64 L66,53 C69,49 69,44 66,41 C63,38 57,38 54,42 Z" />
+    <!-- Mini Safety Beacon Star -->
+    <path
+        android:fillColor="#FFEB3B"
+        android:pathData="M54,47 L55.5,50.5 L59,51 L56.5,53.5 L57,57 L54,55 L51,57 L51.5,53.5 L49,51 L52.5,50.5 Z" />
+</vector>
