@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,9 +51,13 @@ import androidx.compose.ui.unit.sp
 import com.example.data.local.EmergencyAlertEntity
 import com.example.data.local.UserProfileEntity
 import com.example.data.network.AiSafetyAnalysis
+import com.example.service.AudioRecordState
+import com.example.service.CallChainState
 import com.example.service.DispatchedNotification
 import com.example.service.UserLocationResult
 import com.example.ui.components.AiAnalysisCard
+import com.example.ui.components.AudioRecordingCard
+import com.example.ui.components.EmergencyCallChainCard
 import com.example.ui.components.MapPreviewCard
 import com.example.ui.theme.CriticalRed
 import com.example.ui.theme.GuardianPurple
@@ -64,6 +69,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import com.example.util.AppLanguage
+import com.example.util.AppLocalization
+
 @Composable
 fun ResponderDashboardScreen(
     userProfile: UserProfileEntity?,
@@ -71,14 +84,29 @@ fun ResponderDashboardScreen(
     latestAiAnalysis: AiSafetyAnalysis?,
     location: UserLocationResult?,
     dispatchedLogs: List<DispatchedNotification>,
+    audioRecordState: AudioRecordState = AudioRecordState.Idle,
+    callChainState: CallChainState = CallChainState(),
+    language: AppLanguage = AppLanguage.ENGLISH,
+    isDarkTheme: Boolean = false,
+    onToggleTheme: () -> Unit = {},
+    onOpenLanguageSelector: () -> Unit = {},
     onDialVictim: (String) -> Unit,
     onDialPolice: () -> Unit,
     onOpenMap: (Double, Double) -> Unit,
     onRefreshLocation: () -> Unit,
     onShareAlert: (String) -> Unit,
     onResolveAlert: (Long) -> Unit,
+    onStopAudioAndAnalyze: () -> Unit = {},
+    onCancelAudioRecording: () -> Unit = {},
+    onStartManualAudioRecording: () -> Unit = {},
+    onEscalateCallChain: () -> Unit = {},
+    onMarkCallConnected: () -> Unit = {},
+    onTogglePauseCallChain: () -> Unit = {},
+    onStopCallChain: () -> Unit = {},
+    onStartCallChain: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val strings = AppLocalization.getStrings(language)
     val isAlertActive = activeAlert != null
     val profile = userProfile ?: UserProfileEntity()
 
@@ -91,6 +119,110 @@ fun ResponderDashboardScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
+        // App Settings & Preferences Card (Language & Dark/Light Mode)
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp)
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    text = "App Settings & Accessibility",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Language option button
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onOpenLanguageSelector() }
+                            .testTag("dashboard_change_language_btn")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(text = language.flagEmoji, fontSize = 20.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = language.nativeName,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Tap to change",
+                                    fontSize = 10.sp,
+                                    color = PrimaryRose
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    // Theme Toggle Tile
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onToggleTheme() }
+                            .testTag("dashboard_toggle_theme_btn")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = if (isDarkTheme) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
+                                    contentDescription = "Theme",
+                                    tint = if (isDarkTheme) GuardianPurple else PrimaryRose,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = if (isDarkTheme) "Dark" else "Light",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Switch(
+                                checked = isDarkTheme,
+                                onCheckedChange = { onToggleTheme() },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = GuardianPurple,
+                                    uncheckedThumbColor = PrimaryRose,
+                                    uncheckedTrackColor = PrimaryRose.copy(alpha = 0.2f)
+                                ),
+                                modifier = Modifier.size(width = 36.dp, height = 24.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
         // Responder Mode Simulation Banner
         Surface(
             shape = RoundedCornerShape(12.dp),
@@ -301,6 +433,29 @@ fun ResponderDashboardScreen(
             onOpenExternalMap = onOpenMap,
             onRefreshLocation = onRefreshLocation,
             isEmergencyMode = isAlertActive
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Live Calling Daisy Chain Status
+        EmergencyCallChainCard(
+            callChainState = callChainState,
+            onEscalateNext = onEscalateCallChain,
+            onMarkConnected = onMarkCallConnected,
+            onTogglePause = onTogglePauseCallChain,
+            onStopChain = onStopCallChain,
+            onStartChain = onStartCallChain
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // 1-Minute Audio Recording & Situational Extraction
+        AudioRecordingCard(
+            audioState = audioRecordState,
+            latestAiAnalysis = latestAiAnalysis,
+            onStopAndAnalyze = onStopAudioAndAnalyze,
+            onCancelRecording = onCancelAudioRecording,
+            onStartManualRecording = onStartManualAudioRecording
         )
 
         Spacer(modifier = Modifier.height(16.dp))

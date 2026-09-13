@@ -14,17 +14,80 @@ import kotlinx.coroutines.withContext
 import java.util.Locale
 import kotlin.coroutines.resume
 
+import android.location.Location
+import android.os.Looper
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+
 data class UserLocationResult(
     val latitude: Double,
     val longitude: Double,
     val address: String,
     val accuracyMeters: Float,
-    val isRealGps: Boolean
+    val isRealGps: Boolean,
+    val speedMps: Float = 0f,
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 class LocationHelper(private val context: Context) {
     private val fusedClient: FusedLocationProviderClient =
         LocationServices.getFusedLocationProviderClient(context)
+
+    private var activeLocationCallback: LocationCallback? = null
+
+    fun hasLocationPermission(): Boolean {
+        val hasFine = context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        val hasCoarse = context.checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+        return hasFine || hasCoarse
+    }
+
+    @SuppressLint("MissingPermission")
+    fun getLiveLocationFlow(): Flow<UserLocationResult> = callbackFlow {
+        if (!hasLocationPermission()) {
+            trySend(getSimulatedFallbackLocation("Permission needed for real GPS"))
+            close()
+            return@callbackFlow
+        }
+
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000L)
+            .setMinUpdateIntervalMillis(1500L)
+            .setMinUpdateDistanceMeters(1f)
+            .build()
+
+        val callback = object : LocationCallback() {
+            override fun onLocationResult(result: com.google.android.gms.location.LocationResult) {
+                val loc = result.lastLocation ?: return
+                val addressName = reverseGeocode(loc.latitude, loc.longitude)
+                val userLoc = UserLocationResult(
+                    latitude = loc.latitude,
+                    longitude = loc.longitude,
+                    address = addressName,
+                    accuracyMeters = loc.accuracy,
+                    isRealGps = true,
+                    speedMps = if (loc.hasSpeed()) loc.speed else 0f,
+                    timestamp = loc.time.takeIf { it > 0 } ?: System.currentTimeMillis()
+                )
+                trySend(userLoc)
+            }
+        }
+
+        try {
+            fusedClient.requestLocationUpdates(locationRequest, callback, Looper.getMainLooper())
+        } catch (e: Exception) {
+            trySend(getSimulatedFallbackLocation("GPS Request Error: ${e.message}"))
+        }
+
+        awaitClose {
+            try {
+                fusedClient.removeLocationUpdates(callback)
+            } catch (_: Exception) {}
+        }
+    }
 
     @SuppressLint("MissingPermission")
     suspend fun getCurrentLocation(): UserLocationResult = withContext(Dispatchers.IO) {

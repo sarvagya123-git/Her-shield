@@ -1,6 +1,6 @@
 {
   "name": "HerShield",
-  "description": "AI-powered women safety platform with one-tap emergency SOS, real-time location capture, Gemini threat classification, and trusted contact dashboard.",
+  "description": "AI-powered women safety platform with one-tap SOS, 1-min ambient voice recording with Gemini contextual extraction, daisy-chain emergency call escalation, and real-time GPS tracking.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -48,6 +48,12 @@ interface HerShieldDao {
     @Query("UPDATE emergency_alerts SET status = 'RESOLVED'")
     suspend fun markAllAlertsResolved()
 
+    @Query("UPDATE emergency_alerts SET latitude = :lat, longitude = :lng, address = :address WHERE id = :id")
+    suspend fun updateAlertLocation(id: Long, lat: Double, lng: Double, address: String)
+
+    @Query("UPDATE emergency_alerts SET situationDescription = :situation, threatType = :threat, riskLevel = :risk, responderSummary = :summary, generatedAlertMessage = :alertMsg WHERE id = :id")
+    suspend fun updateAlertSituationWithAi(id: Long, situation: String, threat: String, risk: String, summary: String, alertMsg: String)
+
     @Query("DELETE FROM emergency_alerts WHERE id = :id")
     suspend fun deleteAlert(id: Long)
 }

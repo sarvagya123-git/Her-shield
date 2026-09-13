@@ -3,6 +3,7 @@ package com.example.ui.screens
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,8 +58,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.local.EmergencyAlertEntity
 import com.example.data.local.UserProfileEntity
+import com.example.data.network.AiSafetyAnalysis
+import com.example.service.AudioRecordState
+import com.example.service.CallChainState
 import com.example.service.UserLocationResult
+import com.example.ui.components.AudioRecordingCard
 import com.example.ui.components.DemoFlowGuideBar
+import com.example.ui.components.EmergencyCallChainCard
 import com.example.ui.components.MapPreviewCard
 import com.example.ui.components.SosButton
 import com.example.ui.theme.CriticalRed
@@ -68,6 +74,14 @@ import com.example.ui.theme.SafetyTeal
 import com.example.ui.theme.SosEmergencyGlow
 import com.example.ui.theme.SosEmergencyRed
 
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.LocationOn
+import com.example.util.AppLanguage
+import com.example.util.AppLocalization
+
 @Composable
 fun SosHomeScreen(
     userProfile: UserProfileEntity?,
@@ -76,6 +90,16 @@ fun SosHomeScreen(
     isProcessing: Boolean,
     isSirenActive: Boolean,
     currentDemoStep: Int,
+    audioState: AudioRecordState = AudioRecordState.Idle,
+    latestAiAnalysis: AiSafetyAnalysis? = null,
+    callChainState: CallChainState = CallChainState(),
+    isLiveGpsTracking: Boolean = true,
+    language: AppLanguage = AppLanguage.ENGLISH,
+    isDarkTheme: Boolean = false,
+    instantShareNotification: String? = null,
+    onDismissInstantShare: () -> Unit = {},
+    onToggleTheme: () -> Unit = {},
+    onOpenLanguageSelector: () -> Unit = {},
     onTriggerSos: (String?) -> Unit,
     onResolveAlert: (Long) -> Unit,
     onToggleSiren: () -> Unit,
@@ -85,8 +109,17 @@ fun SosHomeScreen(
     onSelectDemoStep: (Int) -> Unit,
     onNavigateToAi: () -> Unit,
     onNavigateToDashboard: () -> Unit,
+    onStopAudioAndAnalyze: () -> Unit = {},
+    onCancelAudioRecording: () -> Unit = {},
+    onStartManualAudioRecording: () -> Unit = {},
+    onEscalateCallChain: () -> Unit = {},
+    onMarkCallConnected: () -> Unit = {},
+    onTogglePauseCallChain: () -> Unit = {},
+    onStopCallChain: () -> Unit = {},
+    onStartCallChain: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val strings = AppLocalization.getStrings(language)
     var selectedThreatScenario by remember { mutableStateOf<String?>(null) }
     val isEmergencyActive = activeAlert != null
 
@@ -104,6 +137,146 @@ fun SosHomeScreen(
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        // App Top Bar: Language & Theme Controls
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(PrimaryRose),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Security,
+                        contentDescription = "HerShield",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = strings.appTitle,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = strings.appSubtitle,
+                        fontSize = 9.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                // Language Selection Quick Button
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { onOpenLanguageSelector() }
+                        .testTag("home_language_btn")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(text = language.flagEmoji, fontSize = 13.sp)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = language.code.uppercase(),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+
+                // Dark / Light Theme Quick Toggle
+                IconButton(
+                    onClick = onToggleTheme,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                        .testTag("home_theme_toggle_btn")
+                ) {
+                    Icon(
+                        imageVector = if (isDarkTheme) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
+                        contentDescription = "Theme Toggle",
+                        tint = if (isDarkTheme) GuardianPurple else PrimaryRose,
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+            }
+        }
+
+        // Instant Location Shared Notification Banner
+        AnimatedVisibility(visible = instantShareNotification != null) {
+            instantShareNotification?.let { bannerText ->
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = SafetyTeal.copy(alpha = 0.15f)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, SafetyTeal),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                        .testTag("instant_share_banner")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.LocationOn,
+                            contentDescription = null,
+                            tint = SafetyTeal,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Live Location Shared Instantly",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = SafetyTeal
+                            )
+                            Text(
+                                text = bannerText,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        IconButton(
+                            onClick = onDismissInstantShare,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Close,
+                                contentDescription = "Dismiss",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         // Demo Flow Guide Bar
         DemoFlowGuideBar(
             currentStep = currentDemoStep,
@@ -478,14 +651,77 @@ fun SosHomeScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
-        // Location Snapshot Map Card
-        MapPreviewCard(
-            location = location,
-            onOpenExternalMap = onOpenExternalMap,
-            onRefreshLocation = onRefreshLocation,
-            isEmergencyMode = isEmergencyActive
+        // Feature 1: Automatic 1-Minute Audio Recording & Context Extraction
+        AudioRecordingCard(
+            audioState = audioState,
+            latestAiAnalysis = latestAiAnalysis,
+            onStopAndAnalyze = onStopAudioAndAnalyze,
+            onCancelRecording = onCancelAudioRecording,
+            onStartManualRecording = onStartManualAudioRecording
         )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Feature 2: Emergency Contacts Daisy Chain Calling
+        EmergencyCallChainCard(
+            callChainState = callChainState,
+            onEscalateNext = onEscalateCallChain,
+            onMarkConnected = onMarkCallConnected,
+            onTogglePause = onTogglePauseCallChain,
+            onStopChain = onStopCallChain,
+            onStartChain = onStartCallChain
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Location Snapshot Map Card with Live GPS Streaming Status
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (isLiveGpsTracking) SafetyTeal.copy(alpha = 0.2f) else Color.Gray.copy(alpha = 0.2f),
+                        modifier = Modifier.size(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(if (isLiveGpsTracking) SafetyTeal else Color.Gray)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isLiveGpsTracking) "REAL-TIME GPS TRACKING ACTIVE" else "GPS STANDBY",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 0.5.sp,
+                        color = if (isLiveGpsTracking) SafetyTeal else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Text(
+                    text = "High Precision Satellites",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            MapPreviewCard(
+                location = location,
+                onOpenExternalMap = onOpenExternalMap,
+                onRefreshLocation = onRefreshLocation,
+                isEmergencyMode = isEmergencyActive
+            )
+        }
     }
 }

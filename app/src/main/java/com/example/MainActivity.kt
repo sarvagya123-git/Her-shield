@@ -9,6 +9,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,9 +18,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Dashboard
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.NotificationsActive
 import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.People
@@ -56,6 +61,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.service.CallOutcome
+import com.example.ui.components.LanguageSelectionDialog
 import com.example.ui.screens.AiSituationScreen
 import com.example.ui.screens.ContactsScreen
 import com.example.ui.screens.ProfileScreen
@@ -65,15 +72,16 @@ import com.example.ui.theme.CriticalRed
 import com.example.ui.theme.GuardianPurple
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.theme.PrimaryRose
-import com.example.ui.theme.SosEmergencyRed
 import com.example.ui.viewmodel.HerShieldViewModel
+import com.example.util.AppLanguage
+import com.example.util.AppLocalization
 
-enum class HerShieldTab(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    SOS("SOS", Icons.Rounded.Security),
-    DASHBOARD("Dashboard", Icons.Rounded.Dashboard),
-    AI_INTEL("AI Intel", Icons.Rounded.AutoAwesome),
-    CONTACTS("Contacts", Icons.Rounded.People),
-    PROFILE("Profile", Icons.Rounded.Person)
+enum class HerShieldTab(val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    SOS(Icons.Rounded.Security),
+    DASHBOARD(Icons.Rounded.Dashboard),
+    AI_INTEL(Icons.Rounded.AutoAwesome),
+    CONTACTS(Icons.Rounded.People),
+    PROFILE(Icons.Rounded.Person)
 }
 
 class MainActivity : ComponentActivity() {
@@ -85,19 +93,48 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         setContent {
-            MyApplicationTheme {
+            val isDarkTheme by viewModel.isDarkTheme.collectAsStateWithLifecycle()
+            val currentLanguage by viewModel.currentLanguage.collectAsStateWithLifecycle()
+            val showLanguageDialog by viewModel.showLanguageDialog.collectAsStateWithLifecycle()
+            val instantShareNotification by viewModel.instantShareNotification.collectAsStateWithLifecycle()
+            val chatMessages by viewModel.chatMessages.collectAsStateWithLifecycle()
+            val isAssistantThinking by viewModel.isAssistantThinking.collectAsStateWithLifecycle()
+
+            val strings = AppLocalization.getStrings(currentLanguage)
+
+            MyApplicationTheme(darkTheme = isDarkTheme) {
                 val permissionLauncher = rememberLauncherForActivityResult(
                     contract = ActivityResultContracts.RequestMultiplePermissions()
                 ) {
                     viewModel.refreshLocation()
+                    viewModel.startLiveLocationTracking()
                 }
 
                 LaunchedEffect(Unit) {
                     permissionLauncher.launch(
                         arrayOf(
                             Manifest.permission.ACCESS_FINE_LOCATION,
-                            Manifest.permission.ACCESS_COARSE_LOCATION
+                            Manifest.permission.ACCESS_COARSE_LOCATION,
+                            Manifest.permission.RECORD_AUDIO,
+                            Manifest.permission.CALL_PHONE,
+                            Manifest.permission.SEND_SMS
                         )
+                    )
+                    // Fetch real-time live location immediately on open
+                    viewModel.refreshLocation()
+                    viewModel.startLiveLocationTracking()
+                }
+
+                // Show Language Picker Dialog on First Open or Dashboard Request
+                if (showLanguageDialog) {
+                    LanguageSelectionDialog(
+                        currentLanguage = currentLanguage,
+                        onLanguageSelected = { selected ->
+                            viewModel.selectLanguage(selected)
+                        },
+                        onDismiss = {
+                            viewModel.dismissLanguageDialog()
+                        }
                     )
                 }
 
@@ -113,6 +150,9 @@ class MainActivity : ComponentActivity() {
                 val latestAiAnalysis by viewModel.latestAiAnalysis.collectAsStateWithLifecycle()
                 val isAiClassifying by viewModel.isAiClassifying.collectAsStateWithLifecycle()
                 val currentDemoStep by viewModel.currentDemoStep.collectAsStateWithLifecycle()
+                val audioRecordState by viewModel.audioRecordState.collectAsStateWithLifecycle()
+                val callChainState by viewModel.callChainState.collectAsStateWithLifecycle()
+                val isLiveGpsTracking by viewModel.isLiveGpsTracking.collectAsStateWithLifecycle()
 
                 val isEmergencyActive = activeAlert != null
 
@@ -141,9 +181,9 @@ class MainActivity : ComponentActivity() {
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = "HerShield",
+                                        text = strings.appTitle,
                                         fontWeight = FontWeight.Black,
-                                        fontSize = 18.sp,
+                                        fontSize = 17.sp,
                                         letterSpacing = 0.5.sp
                                     )
                                     if (isEmergencyActive) {
@@ -164,6 +204,39 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             actions = {
+                                // Quick Language Trigger in Appbar
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .clickable { viewModel.openLanguageSelector() }
+                                        .testTag("appbar_language_btn")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(text = currentLanguage.flagEmoji, fontSize = 13.sp)
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(4.dp))
+
+                                // Quick Dark / Light Mode Toggle
+                                IconButton(
+                                    onClick = { viewModel.toggleDarkTheme() },
+                                    modifier = Modifier.testTag("appbar_theme_toggle_btn")
+                                ) {
+                                    Icon(
+                                        imageVector = if (isDarkTheme) Icons.Rounded.DarkMode else Icons.Rounded.LightMode,
+                                        contentDescription = "Toggle Theme",
+                                        tint = if (isDarkTheme) GuardianPurple else PrimaryRose,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+
+                                // Siren toggle
                                 IconButton(
                                     onClick = { viewModel.toggleSiren() },
                                     modifier = Modifier.testTag("appbar_siren_btn")
@@ -185,8 +258,16 @@ class MainActivity : ComponentActivity() {
                             containerColor = MaterialTheme.colorScheme.surface,
                             tonalElevation = 8.dp
                         ) {
-                            HerShieldTab.values().forEach { tab ->
+                            HerShieldTab.entries.forEach { tab ->
                                 val isSelected = currentTab == tab
+                                val labelText = when (tab) {
+                                    HerShieldTab.SOS -> strings.sosTab
+                                    HerShieldTab.DASHBOARD -> strings.dashboardTab
+                                    HerShieldTab.AI_INTEL -> strings.aiAssistantTab.split(" ").firstOrNull() ?: "AI"
+                                    HerShieldTab.CONTACTS -> strings.contactsTab
+                                    HerShieldTab.PROFILE -> strings.profileTab
+                                }
+
                                 NavigationBarItem(
                                     selected = isSelected,
                                     onClick = { currentTab = tab },
@@ -199,15 +280,15 @@ class MainActivity : ComponentActivity() {
                                                     }
                                                 }
                                             ) {
-                                                Icon(tab.icon, contentDescription = tab.title)
+                                                Icon(tab.icon, contentDescription = labelText)
                                             }
                                         } else {
-                                            Icon(tab.icon, contentDescription = tab.title)
+                                            Icon(tab.icon, contentDescription = labelText)
                                         }
                                     },
                                     label = {
                                         Text(
-                                            text = tab.title,
+                                            text = labelText,
                                             fontSize = 10.sp,
                                             fontWeight = if (isSelected) FontWeight.Black else FontWeight.Normal
                                         )
@@ -234,6 +315,16 @@ class MainActivity : ComponentActivity() {
                                     isProcessing = isSosProcessing,
                                     isSirenActive = isSirenActive,
                                     currentDemoStep = currentDemoStep,
+                                    audioState = audioRecordState,
+                                    latestAiAnalysis = latestAiAnalysis,
+                                    callChainState = callChainState,
+                                    isLiveGpsTracking = isLiveGpsTracking,
+                                    language = currentLanguage,
+                                    isDarkTheme = isDarkTheme,
+                                    instantShareNotification = instantShareNotification,
+                                    onDismissInstantShare = { viewModel.dismissInstantShareNotification() },
+                                    onToggleTheme = { viewModel.toggleDarkTheme() },
+                                    onOpenLanguageSelector = { viewModel.openLanguageSelector() },
                                     onTriggerSos = { threatText ->
                                         viewModel.triggerEmergencySos(threatText)
                                     },
@@ -255,7 +346,15 @@ class MainActivity : ComponentActivity() {
                                         }
                                     },
                                     onNavigateToAi = { currentTab = HerShieldTab.AI_INTEL },
-                                    onNavigateToDashboard = { currentTab = HerShieldTab.DASHBOARD }
+                                    onNavigateToDashboard = { currentTab = HerShieldTab.DASHBOARD },
+                                    onStopAudioAndAnalyze = { viewModel.stopVoiceRecordingAndAnalyze() },
+                                    onCancelAudioRecording = { viewModel.cancelVoiceRecording() },
+                                    onStartManualAudioRecording = { viewModel.startManualVoiceRecording() },
+                                    onEscalateCallChain = { viewModel.escalateToNextContact(CallOutcome.NO_ANSWER_ESCALATED) },
+                                    onMarkCallConnected = { viewModel.markCurrentCallConnected() },
+                                    onTogglePauseCallChain = { viewModel.togglePauseCallingChain() },
+                                    onStopCallChain = { viewModel.stopEmergencyCallingChain() },
+                                    onStartCallChain = { viewModel.startEmergencyCallingChain() }
                                 )
                             }
 
@@ -266,12 +365,26 @@ class MainActivity : ComponentActivity() {
                                     latestAiAnalysis = latestAiAnalysis,
                                     location = location,
                                     dispatchedLogs = dispatchedLogs,
+                                    audioRecordState = audioRecordState,
+                                    callChainState = callChainState,
+                                    language = currentLanguage,
+                                    isDarkTheme = isDarkTheme,
+                                    onToggleTheme = { viewModel.toggleDarkTheme() },
+                                    onOpenLanguageSelector = { viewModel.openLanguageSelector() },
                                     onDialVictim = { phone -> viewModel.dialContact(phone) },
                                     onDialPolice = { viewModel.dialPolice() },
                                     onOpenMap = { lat, lng -> viewModel.openCurrentLocationOnMap(lat, lng) },
                                     onRefreshLocation = { viewModel.refreshLocation() },
                                     onShareAlert = { msg -> viewModel.shareAlert(msg) },
-                                    onResolveAlert = { id -> viewModel.resolveActiveAlert(id) }
+                                    onResolveAlert = { id -> viewModel.resolveActiveAlert(id) },
+                                    onStopAudioAndAnalyze = { viewModel.stopVoiceRecordingAndAnalyze() },
+                                    onCancelAudioRecording = { viewModel.cancelVoiceRecording() },
+                                    onStartManualAudioRecording = { viewModel.startManualVoiceRecording() },
+                                    onEscalateCallChain = { viewModel.escalateToNextContact(CallOutcome.NO_ANSWER_ESCALATED) },
+                                    onMarkCallConnected = { viewModel.markCurrentCallConnected() },
+                                    onTogglePauseCallChain = { viewModel.togglePauseCallingChain() },
+                                    onStopCallChain = { viewModel.stopEmergencyCallingChain() },
+                                    onStartCallChain = { viewModel.startEmergencyCallingChain() }
                                 )
                             }
 
@@ -279,6 +392,10 @@ class MainActivity : ComponentActivity() {
                                 AiSituationScreen(
                                     latestAiAnalysis = latestAiAnalysis,
                                     isClassifying = isAiClassifying,
+                                    chatMessages = chatMessages,
+                                    isAssistantThinking = isAssistantThinking,
+                                    onSendChatMessage = { query -> viewModel.sendAssistantMessage(query) },
+                                    onClearChat = { viewModel.clearAssistantChat() },
                                     onAnalyzeSituation = { text -> viewModel.analyzeCustomSituation(text) },
                                     onTriggerSosWithAi = { text ->
                                         viewModel.triggerEmergencySos(text)

@@ -68,16 +68,80 @@ class AlertDispatcher(private val context: Context) {
 
     fun isSirenActive(): Boolean = isAlarmPlaying
 
-    fun dialEmergencyContact(phoneNumber: String) {
+    /**
+     * Directly places a phone call to emergency contacts without redirecting to the dialer keypad
+     * when android.permission.CALL_PHONE is granted. Falls back to ACTION_DIAL if permission is missing.
+     */
+    fun dialEmergencyContact(phoneNumber: String, forceDirectCall: Boolean = true) {
         try {
-            val cleanNumber = phoneNumber.replace(" ", "").trim()
-            val intent = Intent(Intent.ACTION_DIAL).apply {
-                data = Uri.parse("tel:$cleanNumber")
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            val cleanNumber = phoneNumber.replace(" ", "").replace("-", "").trim()
+            val hasCallPermission = context.checkSelfPermission(android.Manifest.permission.CALL_PHONE) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+
+            if (forceDirectCall && hasCallPermission) {
+                // Direct automatic call without opening/redirecting to dialer app
+                val callIntent = Intent(Intent.ACTION_CALL).apply {
+                    data = Uri.parse("tel:$cleanNumber")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(callIntent)
+                Log.d("HerShieldAlert", "Automatic direct phone call initiated to $cleanNumber")
+            } else {
+                // Fallback to dialer
+                val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                    data = Uri.parse("tel:$cleanNumber")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(dialIntent)
+                Log.d("HerShieldAlert", "Phone dialer launched for $cleanNumber")
             }
-            context.startActivity(intent)
         } catch (e: Exception) {
-            Log.e("HerShieldAlert", "Could not start dialer: ${e.message}")
+            Log.e("HerShieldAlert", "Could not start call: ${e.message}")
+            // Graceful fallback to dialer
+            try {
+                val cleanNumber = phoneNumber.replace(" ", "").replace("-", "").trim()
+                val fallbackIntent = Intent(Intent.ACTION_DIAL).apply {
+                    data = Uri.parse("tel:$cleanNumber")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(fallbackIntent)
+            } catch (err: Exception) {
+                Log.e("HerShieldAlert", "Dialer fallback failed: ${err.message}")
+            }
+        }
+    }
+
+    /**
+     * Instantly shares emergency distress location via SMS or Android share sheet
+     */
+    fun sendEmergencySms(phoneNumber: String, messageText: String) {
+        try {
+            val cleanNumber = phoneNumber.replace(" ", "").replace("-", "").trim()
+            val hasSmsPermission = context.checkSelfPermission(android.Manifest.permission.SEND_SMS) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+
+            if (hasSmsPermission) {
+                val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    context.getSystemService(android.telephony.SmsManager::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    android.telephony.SmsManager.getDefault()
+                }
+                val parts = smsManager.divideMessage(messageText)
+                smsManager.sendMultipartTextMessage(cleanNumber, null, parts, null, null)
+                Log.d("HerShieldAlert", "Emergency SMS sent directly to $cleanNumber")
+            } else {
+                // Pre-fill SMS Intent directly
+                val smsIntent = Intent(Intent.ACTION_SENDTO).apply {
+                    data = Uri.parse("smsto:$cleanNumber")
+                    putExtra("sms_body", messageText)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(smsIntent)
+            }
+        } catch (e: Exception) {
+            Log.w("HerShieldAlert", "Send SMS error, opening share chooser: ${e.message}")
+            shareEmergencyAlert(messageText)
         }
     }
 
